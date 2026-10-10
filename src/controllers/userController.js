@@ -23,7 +23,7 @@ const USERS = [
 
 //CRUD create read update delete
 
-//read
+//read, nampilin smua data
 export const getAllUser = async (req, res) => {
   try {
     const [rows] = await pool.query("SELECT id, name, email, is_active FROM users");
@@ -42,16 +42,16 @@ export const getAllUser = async (req, res) => {
   }
 };
 
+
 //read 1
 
 export const getUserById = async (req, res) => {
   const id = parseInt(req.params.id);
-  const user = await pool.query("SELECT id, name, email, is_active FROM users WHERE id=?", [id]);
-  if (!user) {
-    res.status(404).json({
+  const [user] = await pool.query("SELECT id, name, email, is_active FROM users WHERE id=?", [id]);
+  if (user.length === 0) {
+    return res.status(404).json({
       status: false,
-      message: "User found",
-      data: user,
+      message: "no data",
     });
   }
 };
@@ -80,6 +80,7 @@ export const createUser = async(req, res) => {
   }
 };
 
+//update
 export const updateUser = async(req, res) => {
   const id = parseInt(req.params.id);
   const { name, email, password } = req.body;
@@ -114,16 +115,32 @@ export const updateUser = async(req, res) => {
   });
 };
 
-export const deleteUser = (req, res) => {
-  const id = parseInt(req.params.id);
-  const userIndex = USERS.findIndex((u) => u.id === id);
+export const deleteUser = async(req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await pool.query("DELETE FROM users WHERE id=?", [id]);
 
-  if (userIndex === -1) {
-    return res.status(404).json({
-      status: false,
-      message: "User not found",
+    return res.status(200).json({
+      status: true,
+      message: "Delete Successful",
     });
+  } catch (error) {
+      return res.status(500).json({
+        status: false,
+        message: "Delete user failed",
+        error: error.message,
+      });
   }
+  
+  
+  // const userIndex = USERS.findIndex((u) => u.id === id);
+
+  // if (userIndex === -1) {
+  //   return res.status(404).json({
+  //     status: false,
+  //     message: "User not found",
+  //   });
+  // }
 
   const deletedUser = USERS.splice(userIndex, 1)[0];
   return res.status(200).json({
