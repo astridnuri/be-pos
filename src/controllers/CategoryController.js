@@ -109,3 +109,18 @@ try {
   }
 }
 //delete
+export const deleteCategory = async(req, res) => {
+    try {
+        const id = parseInt(req.params.id)
+        await pool.query("DELETE FROM categories WHERE id=?", [id])
+        return res.status(200).json({
+            status: true,
+            message:"Delete category success"
+        })
+    } catch (error) {
+        return res.status(500).json({
+            status: false,
+            message: error.message
+        })
+    }
+}
