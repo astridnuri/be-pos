@@ -22,4 +22,5 @@ try {
     console.log('connection failed', error.message)
 }
 
+
 export default pool
