@@ -41,11 +41,36 @@ export const getAllTransaction = async(req, res) => {
 }
 
 export const createTransaction = async (req, res) => {
+    const connection = await pool.getConnection() //pindah ke atas try dari pak Reza
   try {
-    const connection = await pool.getConnection()
-    const { order_number, user_id, payment_method, subtotal, tax, total, items} = req.body;
+      const { order_number, user_id, payment_method, subtotal, tax, total, items = [], pay=0} = req.body;
+      await connection.beginTransaction() //tambahan pak Reza setelah ok
+
+    // const userId = req.user?.id
+
+    // const orderNumber = await generateOrderNumber(connection) || order_number
+ 
+    // console.log("order number", orderNumber)
+    const isMidtrans = String(payment_method) === "1"  || payment_method === "midtrans"
+    let change = 0
+    let cashReceive = 0
+    let status = "pending"
+
+    if (payment_method===2) {
+        cashReceive = Number(pay)
+        if(cashReceive < Number(total)){
+            await connection.rollback()
+            return res.status(400).json({
+                status: false,
+                message:"Cash less than total"
+            })
+        }
+        change = cashReceive - Number(total)
+        status = "settlement"
+    }
+
     
-    const [transaction] = await pool.query("INSERT INTO orders (order_number, user_id, payment_method, subtotal, tax, total) VALUES (?,?,?,?,?,?)", [order_number, user_id, payment_method, subtotal, tax, total]);
+    const [transaction] = await pool.query("INSERT INTO orders (order_number, user_id, payment_method, subtotal, tax, total, pay, status) VALUES (?,?,?,?,?,?,?,?)", [order_number, user_id, payment_method, subtotal, tax, total, pay, status]);
       
     const orderId = transaction.insertId;
     if (items) {
@@ -53,41 +78,77 @@ export const createTransaction = async (req, res) => {
         await pool.query("INSERT INTO order_details (order_id, product_id, qty, price) VALUES (?,?,?,?)", [orderId, item.product_id, item.qty, item.price]);
         }
       }
+
       let midtransResponse = null
       if (Number(payment_method) === 1) {
         const parameter = {
-            transaction_details: {
-                order_id: order_number,
-                gross_amount: subtotal
-      },
-      enable_payments: ["gopay"],
-      item_details: items.map((item) => ({
-        id: item.product_id,
-        price: item.price,
-        quantity: item.qty,
-        name:`Product ID ${item.product_id}`
-      }))
-        }
+          transaction_details: {
+            order_id: order_number,
+            gross_amount: subtotal,
+            payment_gateway: midtransResponse
+              ? {
+                  token: midtransResponse.token,
+                  redirect_url: midtransResponse.redirect_url,
+                }
+              : null,
+          },
+          enable_payments: ["gopay"],
+          item_details: items.map((item) => ({
+            id: item.product_id,
+            price: item.price,
+            quantity: item.qty,
+            name: `Product ID ${item.product_id}`,
+          })),
+        };
         midtransResponse = await snap.createTransaction(parameter)
       }
       await connection.commit()
-      connection.release()
+    //   connection.release() pindah ke finally
       return res.status(201).json({
         status: true,
         message: Number(payment_method) === 1? "Order success. Please continue with gopay" : "Cash payment success",
         order_id: orderId,
         order_number: order_number,
-        payment_gateway: midtransResponse ? {
-            token: midtransResponse.token,
-            redirect_url: midtransResponse.redirect_url
-        }
-        : null
+        payment_details: payment_method===2 ? {
+            total: Number(total),
+            cashReceive: cashReceive,
+            change: change
+        }: null,
+        
       });
   } catch (error) {
+    await connection.rollback()
     return res.status(500).json({
         status: false,
         message: error.message
     })
+  } finally {
+    connection.release()
   }
   
 };
+
+// const generateOrderNumber = async(connection)=>{
+//     //format numbernya TR-19102026-001
+//     const now = new Date()
+//     const year = now.getFullYear() //klo pendek now.year aja
+//     const month = now.getMonth()
+//     const date = now.getDate()
+//     const prefix = `TR-${year}${month}${date}-`
+
+//     //query
+//     const [lastOrder] = await connection.query("SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY id DESC LIMIT 1 FOR UPDATE", [`${prefix}`])
+
+//     const nextNumber = 1
+//     //lastorder akn mghasilkn output data {lastOrder{{ order_number }}}
+
+//     if (lastOrder.length>0) {
+//         const lastNumber = lastOrder[0].order_number
+//         const currentNumber = parseInt(lastNumber.split("-")[2], 10)
+
+//         if(!isNaN(currentNumber)) {
+//             nextNumber = currentNumber +1
+//         }
+//     }
+    // return `${prefix}${String(nextNumber).padStart(4, "0")}` //0010
+// }

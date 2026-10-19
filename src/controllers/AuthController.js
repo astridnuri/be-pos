@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt"
 import pool from "../config/db.js";
 
+// data awalan yang tampil
 const USERS = [
   {
     nama: "Reza",
@@ -15,10 +16,10 @@ const USERS = [
   },
 ];
 
-//bs juga export const login
+//bs juga export default login
 export const login = async(req, res) => {
   const { email, password } = req.body;
-  //atau const email = req.body.email
+
 
   if (!email || !password) {
     res.status(400).json({
