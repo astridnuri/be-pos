@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken"
 export const verifyToken = (req,res,next) => {
     const authHeader = req.headers.authorization
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        res.status(401).json({
+        return res.status(401).json({
             success: false,
             message: "Unauthorized"
         })
@@ -17,6 +17,7 @@ export const verifyToken = (req,res,next) => {
     } catch (error) {
         res.status(401).json ({
         success: false,
+        message:"Invalid credential",
         message: error.message
     })
     }

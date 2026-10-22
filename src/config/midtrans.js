@@ -1,7 +1,7 @@
 import midtransClient from "midtrans-client"
 import dotenv from "dotenv"
 
-dotenv.config
+dotenv.config()
 
 export const snap = new midtransClient.Snap({
     isProduction: false,

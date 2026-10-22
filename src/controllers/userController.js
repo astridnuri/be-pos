@@ -92,15 +92,17 @@ export const updateUser = async(req, res) => {
 
   try {
     if (!password) {
-      const [user] = await pool.query("UPDATE users SET name=?, email=?, is_active=? WHERE id=?", [name, email, password, is_active, id]);
+      await pool.query("UPDATE users SET name=?, email=?, is_active=? WHERE id=?", [name, email, password, is_active, id]);
     } else {
-      const [user] = await pool.query("UPDATE users SET name=?, email=?, password=?, is_active=? WHERE id=?", [name, email, password, is_active, id])
+      await pool.query("UPDATE users SET name=?, email=?, password=?, is_active=? WHERE id=?", [name, email, password, is_active, id])
     }
+
+    const [data] = await pool.query(`SELECT * FROM users WHERE id=?`, [id])
     
     return res.status(200).json({
       status: true,
       message: "Update user success",
-      data: user,
+      data: data[0]
     });  
   } catch (error) {
     return res.status(500).json({

@@ -40,11 +40,65 @@ export const getAllTransaction = async(req, res) => {
     
 }
 
+export const getTransactionById = async(req,res) => {
+
+  try {
+    const id = parseInt(req.params.id) //atau const {id} = req.params
+    const [rows] = await pool.query(
+      "SELECT orders.*, order_details.*, products.name FROM orders LEFT JOIN order_details ON orders.id = order_details.order_id LEFT JOIN products ON order_details.product_id = products.id WHERE orders.order_number=?", [id]);
+    
+    if(rows.length===0){
+      return res.status(400).json({
+        status: false,
+        message: "Data with the id not found"
+      })
+    }
+
+    const transaction ={
+      id: rows[0].id,
+      order_number: rows[0].order_number,
+      user_id: rows[0].user_id,
+      payment_method: rows[0].payment_method,
+      subtotal: rows[0].subtotal,
+      total: rows[0].total,
+      tax: rows[0].tax,
+      pay: rows[0].pay,
+      status: rows[0].status,
+      items:[]
+    }
+
+    rows.forEach((row) => {
+      if (row.product_id) {
+        transaction.items.push({
+          product_id: row.product_id,
+          name: row.name,
+          qty: row.qty,
+          price: row.price
+        });
+      }
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Fetch transaction success",
+      data: transaction,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+}
+
 export const createTransaction = async (req, res) => {
-    const connection = await pool.getConnection() //pindah ke atas try dari pak Reza
+    // const connection = await pool.getConnection() //pindah ke atas try dari pak Reza
   try {
       const { order_number, user_id, payment_method, subtotal, tax, total, items = [], pay=0} = req.body;
+      const userId = req.user?.id
       await connection.beginTransaction() //tambahan pak Reza setelah ok
+      const orderNumber = await generateOrderNumber(connection) || order_number
 
     // const userId = req.user?.id
 
@@ -70,7 +124,7 @@ export const createTransaction = async (req, res) => {
     }
 
     
-    const [transaction] = await pool.query("INSERT INTO orders (order_number, user_id, payment_method, subtotal, tax, total, pay, status) VALUES (?,?,?,?,?,?,?,?)", [order_number, user_id, payment_method, subtotal, tax, total, pay, status]);
+    const [transaction] = await pool.query("INSERT INTO orders (order_number, user_id, payment_method, subtotal, tax, total, pay, status) VALUES (?,?,?,?,?,?,?,?)", [order_number, userId, payment_method, subtotal, tax, total, pay, status]);
       
     const orderId = transaction.insertId;
     if (items) {
@@ -80,18 +134,16 @@ export const createTransaction = async (req, res) => {
       }
 
       let midtransResponse = null
+
       if (Number(payment_method) === 1) {
         const parameter = {
           transaction_details: {
             order_id: order_number,
             gross_amount: subtotal,
-            payment_gateway: midtransResponse
-              ? {
-                  token: midtransResponse.token,
-                  redirect_url: midtransResponse.redirect_url,
-                }
-              : null,
-          },
+        },
+        callbacks: {
+          finish: "http://localhost:5173/transaction/print",
+        },
           enable_payments: ["gopay"],
           item_details: items.map((item) => ({
             id: item.product_id,
@@ -104,17 +156,25 @@ export const createTransaction = async (req, res) => {
       }
       await connection.commit()
     //   connection.release() pindah ke finally
-      return res.status(201).json({
+      return res.status(200).json({
         status: true,
-        message: Number(payment_method) === 1? "Order success. Please continue with gopay" : "Cash payment success",
+        message: Number(payment_method) === 1 ? "Order success. Please continue with gopay" : "Cash payment success",
         order_id: orderId,
         order_number: order_number,
-        payment_details: payment_method===2 ? {
-            total: Number(total),
-            cashReceive: cashReceive,
-            change: change
-        }: null,
-        
+        payment_details:
+          payment_method === 2
+            ? {
+                total: Number(total),
+                cashReceive: cashReceive,
+                change: change,
+              }
+            : null,
+        payment_gateway: midtransResponse
+          ? {
+              token: midtransResponse.token,
+              redirect_url: midtransResponse.redirect_url,
+            }
+          : null,
       });
   } catch (error) {
     await connection.rollback()
@@ -128,27 +188,27 @@ export const createTransaction = async (req, res) => {
   
 };
 
-// const generateOrderNumber = async(connection)=>{
-//     //format numbernya TR-19102026-001
-//     const now = new Date()
-//     const year = now.getFullYear() //klo pendek now.year aja
-//     const month = now.getMonth()
-//     const date = now.getDate()
-//     const prefix = `TR-${year}${month}${date}-`
+let generateOrderNumber = async(connection)=>{
+    //format numbernya TR-19102026-001
+    const now = new Date()
+    const year = now.getFullYear() //klo pendek now.year aja
+    const month = String(now.getMonth()+1).padStart(2,"0")
+    const date = String(now.getDate()).padStart(2,"0")
+    const prefix = `TR-${year}${month}${date}-`
 
-//     //query
-//     const [lastOrder] = await connection.query("SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY id DESC LIMIT 1 FOR UPDATE", [`${prefix}`])
+    //query
+    const [lastOrder] = await connection.query("SELECT order_number FROM orders WHERE order_number LIKE ? ORDER BY id DESC LIMIT 1 FOR UPDATE", [`${prefix}`])
 
-//     const nextNumber = 1
-//     //lastorder akn mghasilkn output data {lastOrder{{ order_number }}}
+    let nextNumber = 1
+    //lastorder akn mghasilkn output data {lastOrder{{ order_number }}}
 
-//     if (lastOrder.length>0) {
-//         const lastNumber = lastOrder[0].order_number
-//         const currentNumber = parseInt(lastNumber.split("-")[2], 10)
+    if (lastOrder.length>0) {
+        const lastNumber = lastOrder[0].order_number
+        const currentNumber = parseInt(lastNumber.split("-")[2], 10)
 
-//         if(!isNaN(currentNumber)) {
-//             nextNumber = currentNumber +1
-//         }
-//     }
-    // return `${prefix}${String(nextNumber).padStart(4, "0")}` //0010
-// }
+        if(!isNaN(currentNumber)) {
+            nextNumber = currentNumber +1
+        }
+    }
+    return `${prefix}${String(nextNumber).padStart(4, "0")}` //0010
+}
