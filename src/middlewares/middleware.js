@@ -15,7 +15,7 @@ export const verifyToken = (req,res,next) => {
         req.user = decode
         next()
     } catch (error) {
-        res.status(401).json ({
+        res.status(500).json ({
         success: false,
         message:"Invalid credential",
         message: error.message
